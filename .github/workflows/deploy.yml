@@ -1,4 +1,4 @@
-name: Automated SSH Deployment
+name: Clean Self-Hosted Deployment
 
 on:
   push:
@@ -7,18 +7,24 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted # <-- Memicu runner di server VPS Anda
     steps:
-      - name: SSH Remote Commands to Pull Latest Code
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /var/www/deployer/laravel-devops-demo
-            git fetch origin main
-            git reset --hard origin/main
-            composer i
-            php artisan optimize
+      # 1. Otomatis clone/checkout kode ke workspace runner (tanpa setup manual di VM)
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+
+      # 2. Sinkronisasikan file bersih ke direktori web server menggunakan rsync
+      - name: Sync to Web Directory & Reload Server
+        run: |
+          echo "🚀 Memulai sinkronisasi file ke /var/www/deployer/laravel-devops-demo..."
+          sudo mkdir -p /var/www/deployer/laravel-devops-demo
+          sudo rsync -av --delete --exclude='.git' --exclude='.github' ./ /var/www/deployer/laravel-devops-demo/
+          composer i -d /var/www/deployer/laravel-devops-demo
+          cp /var/www/deployer/laravel-devops-demo/.env.example /var/www/deployer/laravel-devops-demo/.env
+          php /var/www/deployer/laravel-devops-demo/artisan key:generate
+          php /var/www/deployer/laravel-devops-demo/artisan migrate --force
+          php /var/www/deployer/laravel-devops-demo/artisan optimize
+          sudo chown -R www-data:www-data /var/www/deployer/laravel-devops-demo
+          sudo chmod -R 755 /var/www/deployer/laravel-devops-demo
+          sudo systemctl reload nginx
+          echo "✅ Deployment berhasil tanpa perlu git clone awal di server!"S
